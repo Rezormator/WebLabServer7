@@ -1,75 +1,64 @@
 from flask import Flask, request, jsonify
-from flask_sqlalchemy import SQLAlchemy
+from flask_cors import CORS
 from datetime import datetime
 import pytz
-from flask_cors import CORS
 
 app = Flask(__name__)
 CORS(app)
 
-# Налаштування бази даних SQLite
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///events.db'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+# Для збереження подій в пам'яті (або замініть на базу даних)
+event_logs = []
 
-db = SQLAlchemy(app)
-
-# Модель для збереження подій
-class Event(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    timestamp = db.Column(db.String(50), nullable=False)
-    description = db.Column(db.String(200), nullable=False)
-    server_time = db.Column(db.String(50), nullable=False)
-
-# Ініціалізація бази даних
-with app.app_context():
-    db.create_all()
-
-# Функція для отримання часу сервера
+# Функція для отримання серверного часу
 def get_server_time():
-    return datetime.now(pytz.utc).strftime('%Y-%m-%d %H:%M:%S')
+    utc_now = datetime.utcnow()
+    local_time = utc_now.astimezone(pytz.timezone("Europe/Kyiv"))
+    return local_time.strftime("%Y-%m-%d %H:%M:%S")
 
+# Маршрут для негайного відправлення подій
 @app.route('/log_event', methods=['POST'])
 def log_event():
-    try:
-        data = request.json
-        new_event = Event(
-            timestamp=data['timestamp'],
-            description=data['description'],
-            server_time=get_server_time()
-        )
-        db.session.add(new_event)
-        db.session.commit()
-        return jsonify({"status": "success", "message": "Event logged"}), 200
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 400
+    data = request.json
+    server_time = get_server_time()
 
+    if 'description' not in data or 'timestamp' not in data:
+        return jsonify({"error": "Invalid data format"}), 400
+
+    event_logs.append({
+        "description": data['description'],
+        "local_time": data['timestamp'],
+        "server_time": server_time,
+        "event_number": len(event_logs) + 1
+    })
+
+    return jsonify({"message": "Event logged successfully", "server_time": server_time}), 200
+
+# Маршрут для акумульованих даних
 @app.route('/log_batch', methods=['POST'])
 def log_batch():
-    try:
-        batch = request.json
-        for data in batch:
-            new_event = Event(
-                timestamp=data['timestamp'],
-                description=data['description'],
-                server_time=get_server_time()
-            )
-            db.session.add(new_event)
-        db.session.commit()
-        return jsonify({"status": "success", "message": "Batch events logged"}), 200
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 400
+    data = request.json
 
+    if not isinstance(data, list):
+        return jsonify({"error": "Invalid data format"}), 400
+
+    for event in data:
+        if 'description' not in event or 'timestamp' not in event:
+            continue  # Пропускаємо некоректні події
+
+        server_time = get_server_time()
+        event_logs.append({
+            "description": event['description'],
+            "local_time": event['timestamp'],
+            "server_time": server_time,
+            "event_number": len(event_logs) + 1
+        })
+
+    return jsonify({"message": f"{len(data)} events logged successfully"}), 200
+
+# Маршрут для перегляду подій
 @app.route('/get_events', methods=['GET'])
 def get_events():
-    events = Event.query.all()
-    return jsonify([
-        {
-            "id": event.id,
-            "timestamp": event.timestamp,
-            "description": event.description,
-            "server_time": event.server_time
-        } for event in events
-    ]), 200
+    return jsonify(event_logs), 200
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, port=5000)

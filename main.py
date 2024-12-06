@@ -1,6 +1,6 @@
-from flask import Flask, request, jsonify
-from flask_cors import CORS
-from datetime import datetime
+import flask
+import flask_cors
+import datetime
 import pytz
 
 app = Flask(__name__)
@@ -15,7 +15,7 @@ def get_server_time():
     local_time = utc_now.astimezone(pytz.timezone("Europe/Kyiv"))
     return local_time.strftime("%Y-%m-%d %H:%M:%S")
 
-# Маршрут для негайного відправлення подій
+# Маршрут для негайного відправлення aодій
 @app.route('/log_event', methods=['POST'])
 def log_event():
     data = request.json
